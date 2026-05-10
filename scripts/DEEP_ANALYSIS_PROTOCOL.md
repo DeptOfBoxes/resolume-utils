@@ -26,6 +26,9 @@ param interaction:
 
 - `ffgl_param_table.py` — pre-flight, fetches the canonical param table
 - `ffgl_sweep_helper.py write`   — every param change goes through this
+  - Supports ParamRange (`--value 0.5`), ParamBoolean (`--value true|false`),
+    ParamChoice (`--value "Option String"` — must match an `options[]` entry).
+  - Validates type from the param table and rejects mismatches with exit 2.
 - `ffgl_sweep_helper.py read`    — explicit reads
 - `ffgl_sweep_helper.py capture` — every screenshot goes through this
 - `ffgl_sweep_helper.py verify`  — every screenshot gets dhash-diffed
