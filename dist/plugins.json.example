@@ -1,0 +1,4 @@
+[
+  {"bundle": "MyPlugin",       "dylib": "libmyplugin.dylib"},
+  {"bundle": "AnotherPlugin",  "dylib": "libanotherplugin.dylib"}
+]
