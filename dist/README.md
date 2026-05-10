@@ -28,8 +28,10 @@ before you spend an hour debugging the wrong thing.
 
 ## Requirements
 
-- macOS
-- Python 3 with tkinter (`brew install python-tk` if needed)
+- macOS or Windows
+- Python 3 with tkinter
+  - macOS: `brew install python-tk` if tkinter is missing
+  - Windows: install from [python.org](https://python.org) — **not** the Microsoft Store version, which omits tkinter
 - Resolume Arena 7.8 or later
 
 ---
@@ -62,13 +64,19 @@ python3 rest_health_monitor_ui.py --port 8081
 
 ## Auto-launch with login
 
+**macOS:**
 ```bash
 bash install.sh    # installs LaunchAgent, starts immediately
 bash uninstall.sh  # removes LaunchAgent and stops the process
 ```
-
-The LaunchAgent starts the floating panel at login and keeps it running.
 Log: `/tmp/cubeport-status.log`
+
+**Windows:**
+```
+install_windows.bat    # creates a Task Scheduler task, runs at each login
+uninstall_windows.bat  # removes the task and kills any running instance
+```
+Run as Administrator if the installer reports a permission error.
 
 ---
 

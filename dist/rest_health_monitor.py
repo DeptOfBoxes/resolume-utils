@@ -2,6 +2,7 @@
 """
 REST Health Monitor
 Watches Resolume Arena / Avenue / Wire REST API health in real time.
+Cross-platform: macOS and Windows.
 
 Usage:
   python3 rest_health_monitor.py                 # live watch (5s refresh)
@@ -16,16 +17,33 @@ import urllib.request, urllib.error
 import hashlib, json
 from datetime import datetime
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
-EXTRA_EFFECTS = os.path.expanduser("~/Documents/Resolume Arena/Extra Effects")
-ARENA_DOCS    = os.path.expanduser("~/Documents/Resolume Arena")
-ARENA_LOG     = os.path.expanduser("~/Library/Logs/Resolume Arena/Resolume Arena log.txt")
-ARENA_APP     = "/Applications/Resolume Arena/Arena.app"
+IS_WIN = sys.platform == "win32"
 
-BUS_LIBS = [
-    "libffgl_cpb_bus.dylib",
-    "libffgl_texture_bus.dylib",
-]
+# Enable ANSI escape codes on Windows 10+
+if IS_WIN:
+    os.system("")
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+if IS_WIN:
+    _docs       = os.path.join(os.path.expanduser("~"), "Documents", "Resolume Arena")
+    _localapp   = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    EXTRA_EFFECTS = os.path.join(_docs, "Extra Effects")
+    ARENA_DOCS    = _docs
+    ARENA_LOG     = os.path.join(_localapp, "Resolume Arena", "Resolume Arena log.txt")
+    ARENA_EXE     = r"C:\Program Files\Resolume Arena\Arena.exe"
+    BUS_LIBS = [
+        "ffgl_cpb_bus.dll",
+        "ffgl_texture_bus.dll",
+    ]
+else:
+    EXTRA_EFFECTS = os.path.expanduser("~/Documents/Resolume Arena/Extra Effects")
+    ARENA_DOCS    = os.path.expanduser("~/Documents/Resolume Arena")
+    ARENA_LOG     = os.path.expanduser("~/Library/Logs/Resolume Arena/Resolume Arena log.txt")
+    ARENA_APP     = "/Applications/Resolume Arena/Arena.app"
+    BUS_LIBS = [
+        "libffgl_cpb_bus.dylib",
+        "libffgl_texture_bus.dylib",
+    ]
 
 REFRESH_S = 5
 
@@ -43,24 +61,45 @@ RESET  = "\033[0m"
 
 def arena_pid():
     try:
-        r = subprocess.run(["pgrep", "-f", "Resolume Arena"],
-                           capture_output=True, text=True, timeout=3)
-        pids = [p for p in r.stdout.strip().split() if p]
-        return pids[0] if pids else None
+        if IS_WIN:
+            r = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq Arena.exe", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in r.stdout.strip().splitlines():
+                parts = line.strip('"').split('","')
+                if len(parts) >= 2 and "Arena.exe" in parts[0]:
+                    return parts[1]
+            return None
+        else:
+            r = subprocess.run(["pgrep", "-f", "Resolume Arena"],
+                               capture_output=True, text=True, timeout=3)
+            pids = [p for p in r.stdout.strip().split() if p]
+            return pids[0] if pids else None
     except Exception:
         return None
 
 
 def arena_version():
-    """Read version from Arena.app bundle. Returns version string or None."""
-    plist = os.path.join(ARENA_APP, "Contents", "Info.plist")
+    """Read version from Arena app/exe. Returns version string or None."""
     try:
-        r = subprocess.run(
-            ["/usr/libexec/PlistBuddy", "-c", "Print CFBundleShortVersionString", plist],
-            capture_output=True, text=True, timeout=3
-        )
-        v = r.stdout.strip()
-        return v if v else None
+        if IS_WIN:
+            r = subprocess.run(
+                ["powershell", "-Command",
+                 f"(Get-Item '{ARENA_EXE}').VersionInfo.ProductVersion"],
+                capture_output=True, text=True, timeout=5
+            )
+            v = r.stdout.strip()
+            return v if v else None
+        else:
+            plist = os.path.join(ARENA_APP, "Contents", "Info.plist")
+            r = subprocess.run(
+                ["/usr/libexec/PlistBuddy", "-c",
+                 "Print CFBundleShortVersionString", plist],
+                capture_output=True, text=True, timeout=3
+            )
+            v = r.stdout.strip()
+            return v if v else None
     except Exception:
         return None
 
@@ -69,14 +108,33 @@ def port_listeners(port=8080):
     """Returns list of (process_name, pid) tuples holding the given port LISTEN."""
     holders = []
     try:
-        r = subprocess.run(
-            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=5
-        )
-        for line in r.stdout.strip().splitlines()[1:]:
-            parts = line.split()
-            if len(parts) >= 2:
-                holders.append((parts[0], parts[1]))
+        if IS_WIN:
+            r = subprocess.run(["netstat", "-ano"],
+                               capture_output=True, text=True, timeout=5)
+            pids = set()
+            for line in r.stdout.splitlines():
+                parts = line.split()
+                if (len(parts) >= 5 and f":{port}" in parts[1]
+                        and parts[3] == "LISTENING"):
+                    pids.add(parts[4])
+            for pid in pids:
+                r2 = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                    capture_output=True, text=True, timeout=5
+                )
+                for pline in r2.stdout.strip().splitlines():
+                    p2 = pline.strip('"').split('","')
+                    if len(p2) >= 2:
+                        holders.append((p2[0], pid))
+        else:
+            r = subprocess.run(
+                ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in r.stdout.strip().splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 2:
+                    holders.append((parts[0], parts[1]))
     except Exception:
         pass
     return holders
@@ -88,17 +146,26 @@ port_8080_info = lambda: port_listeners(8080)
 def port_listen_address(port=8080):
     """Returns the bound address string ('0.0.0.0', '127.0.0.1', '*', etc.) or None."""
     try:
-        r = subprocess.run(
-            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=5
-        )
-        for line in r.stdout.strip().splitlines()[1:]:
-            parts = line.split()
-            # NAME column is last non-empty field; format: addr:port or *:port
-            for p in parts:
-                if f":{port}" in p:
-                    addr = p.rsplit(f":{port}", 1)[0]
+        if IS_WIN:
+            r = subprocess.run(["netstat", "-ano"],
+                               capture_output=True, text=True, timeout=5)
+            for line in r.stdout.splitlines():
+                parts = line.split()
+                if (len(parts) >= 5 and f":{port}" in parts[1]
+                        and parts[3] == "LISTENING"):
+                    addr = parts[1].rsplit(f":{port}", 1)[0]
                     return addr if addr else "*"
+        else:
+            r = subprocess.run(
+                ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in r.stdout.strip().splitlines()[1:]:
+                parts = line.split()
+                for p in parts:
+                    if f":{port}" in p:
+                        addr = p.rsplit(f":{port}", 1)[0]
+                        return addr if addr else "*"
     except Exception:
         pass
     return None
@@ -188,13 +255,25 @@ def api_folder_collision():
 def arena_log_issues(max_scan=600, max_show=8):
     """Returns recent Arena log lines containing FFGL panic/error keywords."""
     hits = []
+    log_path = ARENA_LOG
+    # On Windows try fallbacks if primary path doesn't exist
+    if IS_WIN and not os.path.exists(log_path):
+        for candidate in [
+            os.path.join(os.environ.get("APPDATA", ""), "Resolume Arena",
+                         "Resolume Arena log.txt"),
+            os.path.join(ARENA_DOCS, "Resolume Arena log.txt"),
+        ]:
+            if os.path.exists(candidate):
+                log_path = candidate
+                break
     try:
-        with open(ARENA_LOG, "r", errors="replace") as f:
+        with open(log_path, "r", errors="replace") as f:
             tail = f.readlines()[-max_scan:]
         for line in reversed(tail):
             l = line.rstrip()
             if any(kw in l for kw in
-                   ["panic", "PANIC", "FFGL ERROR", "assertion `left", "assert_eq", "FFGL C BOUNDARY"]):
+                   ["panic", "PANIC", "FFGL ERROR", "assertion `left",
+                    "assert_eq", "FFGL C BOUNDARY"]):
                 hits.append(l)
                 if len(hits) >= max_show:
                     break
@@ -218,8 +297,12 @@ def load_plugin_config():
 
 
 def plugin_path(bundle_name):
-    return os.path.join(EXTRA_EFFECTS,
-                        f"{bundle_name}.bundle", "Contents", "MacOS", bundle_name)
+    if IS_WIN:
+        # Windows FFGL plugins are flat .dll files in Extra Effects
+        return os.path.join(EXTRA_EFFECTS, f"{bundle_name}.dll")
+    else:
+        return os.path.join(EXTRA_EFFECTS,
+                            f"{bundle_name}.bundle", "Contents", "MacOS", bundle_name)
 
 
 def file_sha(path):
@@ -263,7 +346,6 @@ def render(port=8080, dev_root=None):
         if ver:
             parts = ver.split(".")
             minor = int(parts[1]) if len(parts) > 1 else 0
-            patch = int(parts[2]) if len(parts) > 2 else 0
             if minor < 24:
                 out.append(_warn(f"v{ver} — update to 7.24+ (webserver crash fix)"))
             elif minor < 26:
@@ -285,9 +367,9 @@ def render(port=8080, dev_root=None):
         else:
             out.append(_info(f":{port} unbound  (Arena not running)"))
     else:
-        is_arena = any("arena" in p.lower() or "resolume" in p.lower() for p, _ in holders)
+        is_arena = any("arena" in p.lower() or "resolume" in p.lower()
+                       for p, _ in holders)
         if is_arena:
-            # listen address
             addr = port_listen_address(port)
             if addr in ("*", "0.0.0.0", ""):
                 out.append(_ok(f"Arena owns :{port} — 0.0.0.0  (network accessible)"))
@@ -297,25 +379,26 @@ def render(port=8080, dev_root=None):
             else:
                 out.append(_ok(f"Arena owns :{port} — {addr}"))
 
-            # REST probe
             code, ms, summary = rest_probe(port)
             if code == 200:
                 out.append(_ok(f"REST  HTTP 200  ({ms:.0f} ms)"))
                 if ms > 500:
-                    out.append(_warn("    Response slow — large composition; use /parameter/by-id/ for real-time reads"))
+                    out.append(_warn(
+                        "    Response slow — large composition; "
+                        "use /parameter/by-id/ for real-time reads"))
                 if summary:
                     out.append(_info(f"Composition: {summary}"))
             else:
                 out.append(_warn(f"REST returned: {code}"))
                 problems.append(f"REST {code}")
 
-            # WebSocket probe
             ws_ok, ws_ms, ws_err = ws_check(port)
             if ws_ok:
                 out.append(_ok(f"WebSocket  101  ({ws_ms:.0f} ms)"))
             else:
                 out.append(_err(f"WebSocket failed  — {ws_err}"))
-                out.append(_info("    Real-time tools (Companion, custom GUIs) depend on WebSocket"))
+                out.append(_info(
+                    "    Real-time tools (Companion, custom GUIs) depend on WebSocket"))
                 problems.append("WebSocket down")
         else:
             for proc, ppid in holders:
@@ -325,7 +408,8 @@ def render(port=8080, dev_root=None):
     out.append("")
 
     # ── API Endpoints ─────────────────────────────────────────────────────────
-    if pid and holders and any("arena" in p.lower() or "resolume" in p.lower() for p, _ in holders):
+    if pid and holders and any("arena" in p.lower() or "resolume" in p.lower()
+                               for p, _ in holders):
         out.append(f"{BOLD}  API ENDPOINTS{RESET}")
         docs_ok, docs_ms = docs_probe(port)
         if docs_ok:
@@ -335,9 +419,12 @@ def render(port=8080, dev_root=None):
 
         mon_ok, mon_ms = monitors_probe(port)
         if mon_ok is True:
-            out.append(_ok(f"/monitors/ available  ({mon_ms:.0f} ms)  · v7.26+ features active"))
+            out.append(_ok(
+                f"/monitors/ available  ({mon_ms:.0f} ms)  · v7.26+ features active"))
         elif mon_ok is None:
-            out.append(_info("/monitors/ not found  — Arena < 7.26  (update for animation params + output snapshots)"))
+            out.append(_info(
+                "/monitors/ not found  — Arena < 7.26  "
+                "(update for animation params + output snapshots)"))
         else:
             out.append(_warn(f"/monitors/ error  ({mon_ms:.0f} ms)"))
         out.append("")
@@ -345,7 +432,7 @@ def render(port=8080, dev_root=None):
     # ── Filesystem ────────────────────────────────────────────────────────────
     if api_folder_collision():
         out.append(f"{BOLD}  FILESYSTEM{RESET}")
-        out.append(_err(f'"API" folder found in ~/Documents/Resolume Arena/'))
+        out.append(_err(f'"API" folder found in {ARENA_DOCS}'))
         out.append(_warn('    This silently breaks the REST API — rename or remove that folder'))
         problems.append('"API" folder collision')
         out.append("")
@@ -449,7 +536,7 @@ def main():
 
     try:
         while True:
-            os.system("clear")
+            os.system("cls" if IS_WIN else "clear")
             print(render(port, dev_root))
             time.sleep(REFRESH_S)
     except KeyboardInterrupt:

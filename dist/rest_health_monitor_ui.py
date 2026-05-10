@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rest_health_monitor import (
+    IS_WIN,
     arena_pid, arena_version, port_listeners, port_listen_address,
     rest_probe, ws_check, docs_probe, monitors_probe,
     api_folder_collision, arena_log_issues,
@@ -33,11 +34,18 @@ YELLOW  = "#ffd60a"
 RED     = "#ff453a"
 CYAN    = "#64d2ff"
 
-FONT_TITLE  = ("Helvetica Neue", 13, "bold")
-FONT_ROW    = ("Helvetica Neue", 12)
-FONT_SMALL  = ("Helvetica Neue", 11)
-FONT_FOOTER = ("Menlo", 10)
-FONT_SEC    = ("Helvetica Neue", 10, "bold")
+if IS_WIN:
+    FONT_TITLE  = ("Segoe UI", 13, "bold")
+    FONT_ROW    = ("Segoe UI", 12)
+    FONT_SMALL  = ("Segoe UI", 11)
+    FONT_FOOTER = ("Consolas", 10)
+    FONT_SEC    = ("Segoe UI", 10, "bold")
+else:
+    FONT_TITLE  = ("Helvetica Neue", 13, "bold")
+    FONT_ROW    = ("Helvetica Neue", 12)
+    FONT_SMALL  = ("Helvetica Neue", 11)
+    FONT_FOOTER = ("Menlo", 10)
+    FONT_SEC    = ("Helvetica Neue", 10, "bold")
 
 REFRESH_MS    = 5000
 HIDE_DELAY_MS = 3000
