@@ -5,7 +5,7 @@
 set -e
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$REPO/scripts/cubeport_status_ui.py"
+SCRIPT="$REPO/scripts/rest_health_monitor_ui.py"
 PLIST_SRC="$REPO/launch_agent/com.deptofboxes.cubeport-status.plist"
 PLIST_LABEL="com.deptofboxes.cubeport-status"
 PLIST_DEST="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
@@ -35,7 +35,7 @@ if launchctl list "$PLIST_LABEL" &>/dev/null; then
 fi
 
 # Kill any stray UI process left over
-pkill -f "cubeport_status_ui" 2>/dev/null || true
+pkill -f "rest_health_monitor_ui" 2>/dev/null || true
 
 # ── Write filled-in plist ─────────────────────────────────────────────────────
 mkdir -p "$HOME/Library/LaunchAgents"

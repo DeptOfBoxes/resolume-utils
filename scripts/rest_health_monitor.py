@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-CubePort Status Monitor
+REST Health Monitor
 Watches Resolume Arena + CubePort bus health in real time.
 
 Usage:
-  python3 cubeport_status.py           # live watch (refreshes every 5s)
-  python3 cubeport_status.py --once    # single snapshot, then exit
-  python3 cubeport_status.py --dev     # + sha-drift checks vs target/release
+  python3 rest_health_monitor.py           # live watch (refreshes every 5s)
+  python3 rest_health_monitor.py --once    # single snapshot, then exit
+  python3 rest_health_monitor.py --dev     # + sha-drift checks vs target/release
 """
 
 import subprocess, time, sys, os, urllib.request, urllib.error, hashlib, json
@@ -147,7 +147,7 @@ def render(dev_root=None):
     now = datetime.now().strftime("%H:%M:%S")
 
     out.append(f"\n{BOLD}{'═'*50}{RESET}")
-    out.append(f"{BOLD}  CubePort Status Monitor         [{now}]{RESET}")
+    out.append(f"{BOLD}  REST Health Monitor              [{now}]{RESET}")
     out.append(f"{BOLD}{'═'*50}{RESET}\n")
 
     # ── Resolume ──────────────────────────────────────────────────────────────

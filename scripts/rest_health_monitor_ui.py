@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-CubePort Status — floating monitor panel.
+REST Health Monitor — floating monitor panel.
 
 Hides itself when Arena is not running; auto-shows when Arena starts.
-Imports health-check functions from cubeport_status.py (same directory).
+Imports health-check functions from rest_health_monitor.py (same directory).
 """
 
 import tkinter as tk
@@ -13,7 +13,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cubeport_status import (
+from rest_health_monitor import (
     arena_pid, port_8080_info, rest_probe,
     arena_log_issues, plugin_path, PLUGINS,
 )
@@ -68,7 +68,7 @@ class StatusPanel:
     # ── Window chrome ──────────────────────────────────────────────────────────
 
     def _build_chrome(self):
-        self.root.title("CubePort Status")
+        self.root.title("REST Health Monitor")
         self.root.configure(bg=BG)
         self.root.resizable(False, False)
         self.root.wm_attributes("-topmost", True)
@@ -77,7 +77,7 @@ class StatusPanel:
         bar = tk.Frame(self.root, bg=BG, pady=10, padx=14)
         bar.pack(fill=tk.X)
 
-        tk.Label(bar, text="CubePort Status",
+        tk.Label(bar, text="REST Health Monitor",
                  font=FONT_TITLE, bg=BG, fg=FG).pack(side=tk.LEFT)
 
         self._sum_dot   = tk.Label(bar, text="●", font=("Helvetica Neue", 15),

@@ -17,7 +17,7 @@ if [ -f "$PLIST_DEST" ]; then
   echo "Removed $PLIST_DEST"
 fi
 
-pkill -f "cubeport_status_ui" 2>/dev/null && echo "Stopped running process" || true
+pkill -f "rest_health_monitor_ui" 2>/dev/null && echo "Stopped running process" || true
 
 echo ""
 echo "✓ CubePort Status uninstalled."
