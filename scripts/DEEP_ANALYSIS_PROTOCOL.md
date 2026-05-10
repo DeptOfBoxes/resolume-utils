@@ -133,8 +133,9 @@ The agent must NOT use any of these terms — they are markers of confabulation
 because they appeared in the source spec docs the agent had access to:
 
 `sweet zone`, `dead zone`, `breakage`, `dreamy`, `watercolor`, `cinematic`,
-`sigmoid`, `log curve`, `bipolar`, `identity`, `wash`, `chaos`, `psychedelic`,
-`mandala`, `trash`, `amazing`, `nuance lives here`, `breathes`, `chunky`
+`sigmoid`, `log curve`, `bipolar`, `bipolar curve`, `identity`, `wash`, `chaos`,
+`psychedelic`, `mandala`, `trash`, `amazing`, `nuance lives here`, `breathes`,
+`chunky`, `monotonic` (in any curve description)
 
 These are subjective/spec-paraphrased terms. Replace with concrete visual
 observations: pixel-level color, geometry, motion direction, density,
@@ -179,15 +180,81 @@ these have the most legible visual effect.
 
 ## Restoring state
 
-At the end of every sweep session, restore the starting state:
+There are THREE levels of restoration. The agent must apply all of them.
 
-```bash
-# Replay every write from /tmp/PluginName_starting_state.json through
-# ffgl_sweep_helper.py write, in original order.
-```
+### 1. Per-param restoration WITHIN a group (NEW — 2026-05-10 Pass 2 finding)
+
+After sweeping each individual param, restore THAT param to its starting value
+from the param table BEFORE moving to the next param in the same group.
+
+**Why:** Without per-param restoration, sequential sweeps in a group leave the
+buffer in the LAST swept state of the prior param while testing the next one.
+On the FeedBox AS group this caused a DC accumulation cascade — sweeping AS
+Subtract R to 1.0 (max add) saturated the channel, so AS Subtract G was then
+swept against a blown-out buffer, producing near-`[NO_CHANGE]` events
+(3/64 hamming) that masked the param's actual effect.
+
+**Exception — sweep-from-identity-outward:** For params with a clear identity
+value (e.g. 0.5 for bipolar params, 0.0 for additive amounts), the agent MAY
+skip per-param restoration if it sweeps in identity-cancelling order: e.g.
+`0.5 → 0.0 → 0.5 → 1.0` instead of `0.0 → 0.25 → 0.50 → 0.75 → 1.00`. This is
+faster but only applies when identity is unambiguous.
+
+The default is per-param restoration. Identity-outward order is opt-in per
+param, with rationale stated in the report.
+
+### 2. Drain accumulated state BETWEEN groups
+
+For plugins with a Reset/Clear/Drain trigger (e.g. FeedBox's `FB Reset`), the
+agent MUST fire it between groups. This drains accumulated buffer state so the
+next group is tested against a clean baseline rather than the residue of the
+prior group's sweeps.
+
+For plugins without such a trigger: note the limitation in the group-summary
+section. State will accumulate; later groups in the chain order are tested in
+a more saturated state than earlier ones. Order groups carefully.
+
+### 3. Final restoration at the end of the sweep
+
+Restore EVERY param to its starting value from
+`/tmp/PluginName_starting_state.json`. Confirm via helper read-back. Report
+the per-param restoration status in a final state-restoration section.
 
 Do not leave the live clip in arbitrary mid-sweep state — Tim may be
 performing or testing other things on the same comp.
+
+## Live state, not compiled defaults (NEW — 2026-05-10 Pass 2 finding)
+
+The param table file (`/tmp/PluginName_params.json`) captures the actual live
+state and types of every param. This is the SINGLE SOURCE OF TRUTH for the
+sweep. Both the prompt-author and the sub-agent must treat it as authoritative.
+
+### Rules for the prompt-author (the parent session writing the sub-agent prompt)
+
+- **Do NOT pre-classify param types in the prompt.** Don't write tables like
+  "param X is a bool, param Y is a choice." The agent reads
+  `/tmp/PluginName_params.json` and derives types from the `valuetype` field.
+  Listing types in the prompt creates a second source of truth that drifts.
+  Pass 2 caught this: the prompt called IR Invert R/G/B "all bools" but the
+  table showed ParamRange. The sub-agent caught the mismatch only because it
+  trusted the table over the prompt.
+- **Do NOT describe param state as "bypassed by default" or "default value X."**
+  Live state ≠ compiled defaults. Tim may have configured the plugin
+  intentionally for the test (e.g. enabling OL as a visual scaffold —
+  see `feedback_ffgl_outline_visual_scaffold.md`). Refer to live state from
+  the table file, not theoretical defaults from the spec.
+- **Do NOT paraphrase the plugin's HANDOFF curve descriptions in the prompt.**
+  Phrases like "log2 curve", "sigmoid mapping", "bipolar curve" leak into the
+  agent's observations and trigger the banned-vocab filter. Let the agent
+  describe what it sees from the captures, not what the spec says it should be.
+
+### Rules for the sub-agent
+
+- The param table is the only authoritative type/value reference. If the
+  parent prompt contradicts the table, the table wins. Note the discrepancy
+  in the report.
+- "Default value" claims in the prompt or HANDOFF are spec assertions, not
+  live state. Read live state from the table.
 
 ## Output location convention
 
@@ -216,6 +283,14 @@ verbatim:
 ## Lessons encoded (provenance)
 
 - 2026-05-10 — FeedBox Pass 1 hallucination → this entire protocol
+- 2026-05-10 — FeedBox Pass 1 v2 take-1 wrong-window halt → MCP screenshot
+  banned for sweep captures, helper `capture` subcommand mandatory
+- 2026-05-10 — FeedBox Pass 2 (13 groups, 297 captures, all clean) → three
+  additions: per-param restoration within a group, drain accumulated state
+  between groups, "live state, not compiled defaults" discipline for both
+  prompt-author and sub-agent
 - `feedback_ffgl_osc_params_snapback.md` — REST-only rule for FFGL writes
+- `feedback_ffgl_outline_visual_scaffold.md` — Tim's deliberate OL=active
+  setup; do not flag as preset drift
 - `feedback_no_destructive_defaults.md` — restore starting state at end
 - `feedback_check_arena_log_and_size_asserts.md` — REST health monitor in pre-flight
