@@ -60,6 +60,7 @@ class StatusPanel:
         self.port = port
         self._arena_visible = False
         self._hide_pending  = None
+        self._collapsed     = False
 
         self._build_chrome()
         self._build_content_area()
@@ -82,11 +83,15 @@ class StatusPanel:
         self.root.title(f"REST Health Monitor — {product}")
         self.root.configure(bg=BG)
         self.root.resizable(False, False)
-        self.root.wm_attributes("-topmost", True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         bar = tk.Frame(self.root, bg=BG, pady=10, padx=14)
         bar.pack(fill=tk.X)
+
+        self._collapse_btn = tk.Label(bar, text="▼", font=FONT_SMALL,
+                                       bg=BG, fg=FG_DIM, cursor="hand2")
+        self._collapse_btn.pack(side=tk.LEFT, padx=(0, 8))
+        self._collapse_btn.bind("<Button-1>", lambda e: self._toggle_collapse())
 
         tk.Label(bar, text="REST Health Monitor",
                  font=FONT_TITLE, bg=BG, fg=FG).pack(side=tk.LEFT)
@@ -99,14 +104,16 @@ class StatusPanel:
                                     bg=BG, fg=FG_DIM)
         self._sum_label.pack(side=tk.RIGHT, padx=(0, 8))
 
-        tk.Frame(self.root, bg=SEP, height=1).pack(fill=tk.X)
+        self._sep_line = tk.Frame(self.root, bg=SEP, height=1)
+        self._sep_line.pack(fill=tk.X)
 
     def _build_content_area(self):
         self._content = tk.Frame(self.root, bg=BG, padx=14, pady=6)
         self._content.pack(fill=tk.BOTH)
 
     def _build_footer(self):
-        tk.Frame(self.root, bg=SEP, height=1).pack(fill=tk.X)
+        self._footer_sep = tk.Frame(self.root, bg=SEP, height=1)
+        self._footer_sep.pack(fill=tk.X)
         self._footer = tk.Label(self.root, text="starting…",
                                  font=FONT_FOOTER, bg=BG, fg=FG_DIM, pady=6)
         self._footer.pack()
@@ -114,6 +121,22 @@ class StatusPanel:
     def _on_close(self):
         self._arena_visible = False
         self.root.withdraw()
+
+    def _toggle_collapse(self):
+        self._collapsed = not self._collapsed
+        if self._collapsed:
+            self._sep_line.pack_forget()
+            self._content.pack_forget()
+            self._footer_sep.pack_forget()
+            self._footer.pack_forget()
+            self._collapse_btn.config(text="▶")
+        else:
+            self._sep_line.pack(fill=tk.X)
+            self._content.pack(fill=tk.BOTH)
+            self._footer_sep.pack(fill=tk.X)
+            self._footer.pack()
+            self._collapse_btn.config(text="▼")
+        self.root.update_idletasks()
 
     # ── Row helpers ────────────────────────────────────────────────────────────
 
@@ -306,7 +329,7 @@ class StatusPanel:
         if not self._arena_visible:
             self._arena_visible = True
             self.root.deiconify()
-            self.root.lift()
+            # do not lift — stay behind Resolume until user clicks the window
 
     def _hide(self):
         if self._arena_visible:
