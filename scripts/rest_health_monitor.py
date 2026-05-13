@@ -143,6 +143,11 @@ def port_listeners(port=8080):
 port_8080_info = lambda: port_listeners(8080)
 
 
+def is_resolume_process_name(name):
+    lowered = name.lower()
+    return "arena" in lowered or "avenue" in lowered or "resolume" in lowered
+
+
 def port_listen_address(port=8080):
     """Returns the bound address string ('0.0.0.0', '127.0.0.1', '*', etc.) or None."""
     try:
@@ -335,14 +340,22 @@ def render(port=8080, dev_root=None):
     out.append(f"{BOLD}{'═'*50}{RESET}\n")
 
     problems = []
+    holders = port_listeners(port)
+    resolume_holders = [(proc, ppid) for proc, ppid in holders if is_resolume_process_name(proc)]
 
     # ── Resolume ──────────────────────────────────────────────────────────────
     out.append(f"{BOLD}  RESOLUME{RESET}")
     pid = arena_pid()
     ver = arena_version()
     ver_str = f" · v{ver}" if ver else ""
+    pid_source = ""
+    if not pid and resolume_holders:
+        # macOS process enumeration can fail under restricted shells, while lsof
+        # still proves Arena/Avenue owns the REST listener.
+        pid = resolume_holders[0][1]
+        pid_source = " via webserver listener"
     if pid:
-        out.append(_ok(f"Arena running  (PID {pid}{ver_str})"))
+        out.append(_ok(f"Arena running{pid_source}  (PID {pid}{ver_str})"))
         if ver:
             parts = ver.split(".")
             minor = int(parts[1]) if len(parts) > 1 else 0
@@ -357,7 +370,6 @@ def render(port=8080, dev_root=None):
 
     # ── REST / WebSocket ──────────────────────────────────────────────────────
     out.append(f"{BOLD}  WEBSERVER  :{port}  ({product}){RESET}")
-    holders = port_listeners(port)
 
     if not holders:
         if pid:
@@ -367,8 +379,7 @@ def render(port=8080, dev_root=None):
         else:
             out.append(_info(f":{port} unbound  (Arena not running)"))
     else:
-        is_arena = any("arena" in p.lower() or "resolume" in p.lower()
-                       for p, _ in holders)
+        is_arena = bool(resolume_holders)
         if is_arena:
             addr = port_listen_address(port)
             if addr in ("*", "0.0.0.0", ""):
@@ -408,8 +419,7 @@ def render(port=8080, dev_root=None):
     out.append("")
 
     # ── API Endpoints ─────────────────────────────────────────────────────────
-    if pid and holders and any("arena" in p.lower() or "resolume" in p.lower()
-                               for p, _ in holders):
+    if pid and resolume_holders:
         out.append(f"{BOLD}  API ENDPOINTS{RESET}")
         docs_ok, docs_ms = docs_probe(port)
         if docs_ok:
