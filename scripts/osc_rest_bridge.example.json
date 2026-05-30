@@ -1,0 +1,11 @@
+{
+  "osc":   { "host": "127.0.0.1", "port": 7100 },
+  "rest":  { "api": "http://127.0.0.1:8080/api/v1" },
+  "param_table": "/tmp/feedbox.json",
+  "rate_limit_hz": 20.0,
+  "mappings": [
+    { "osc": "/borealis/tempo/phase", "param_key": "FB Opacity" },
+    { "osc": "/borealis/energy/low",  "param_key": "FB Scale", "in": [0.0, 1.0], "out": [0.5, 2.0] },
+    { "osc": "/borealis/energy/high", "param_key": "FB Hue",   "in": [0.0, 1.0], "out": [0.0, 360.0] }
+  ]
+}
