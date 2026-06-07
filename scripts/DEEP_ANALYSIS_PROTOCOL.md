@@ -30,7 +30,10 @@ param interaction:
     ParamChoice (`--value "Option String"` — must match an `options[]` entry).
   - Validates type from the param table and rejects mismatches with exit 2.
 - `ffgl_sweep_helper.py read`    — explicit reads
-- `ffgl_sweep_helper.py capture` — every screenshot goes through this
+- `ffgl_sweep_helper.py capture` — every screenshot goes through this (native window
+  pixels, default **PNG** lossless; wall-clock **timeout** so a bad window id cannot hang)
+- `ffgl_sweep_helper.py probe`   — **instant** pass/fail before a long sweep: capture +
+  minimum width/height/bytes checks; exits non-zero immediately if the path is broken
 - `ffgl_sweep_helper.py verify`  — every screenshot gets dhash-diffed
 
 The MCP `set_param` tool is **BANNED** for FFGL plugins. It uses OSC and the
@@ -68,7 +71,13 @@ mkdir -p /tmp/sweep_captures/PluginName
 #    Pick the smaller window (the pop-out). Save its id:
 echo <window_id_of_popout> > /tmp/PluginName_capture_window.txt
 
-#    Verify the right window was picked by capturing once and inspecting:
+# 5b. Instant capture health (fail fast — wrong id, permissions, hung screencapture)
+python3 ~/PycharmProjects/resolume-utils/scripts/ffgl_sweep_helper.py probe \
+    --window-id $(cat /tmp/PluginName_capture_window.txt) \
+    --out /tmp/sweep_captures/PluginName/PROBE.png
+# Expect: [PROBE_OK] ... dims=WxH ... — non-zero exit = do not start the sweep.
+
+#    Optional second check — manual visual inspection of a full-size PNG:
 python3 ~/PycharmProjects/resolume-utils/scripts/ffgl_sweep_helper.py capture \
     --window-id $(cat /tmp/PluginName_capture_window.txt) \
     --out /tmp/sweep_captures/PluginName/PREFLIGHT_TEST.png
@@ -78,6 +87,20 @@ python3 ~/PycharmProjects/resolume-utils/scripts/ffgl_sweep_helper.py capture \
 # 6. Snapshot the starting state of every numeric param so it can be restored
 #    (read each, save the value list to /tmp/PluginName_starting_state.json)
 ```
+
+### Composition save/reopen probes
+
+If a probe needs a saved `.avc`, do not type a full POSIX path into Resolume's
+Save As filename field. Arena may flatten `/Users/.../Compositions/` into a
+single filename, for example
+`UserstimothyamickDocumentsResolume ArenaCompositions.avc`, instead of treating
+it as directories. Use a known current directory and type only a flat filename,
+then immediately verify the expected path with `ls`.
+
+Before taking screenshots or REST snapshots after a save/reopen probe, record
+the active composition name. If Arena is still showing a scratch probe comp,
+load the intended working comp first so later diagnostics do not capture probe
+state by accident.
 
 ## Sweep loop (per param, per knob position)
 

@@ -49,10 +49,17 @@ Exit codes:
   2  WRITE_FAILED — value did not stick
   3  file missing or invalid
   4  REST unreachable
+  5  capture failed (screencapture error, timeout, empty file, or too-small image)
+  6  probe failed (capture ok but dimensions / sanity checks failed)
 """
 
 import argparse, json, os, subprocess, sys, urllib.request, urllib.error
 from PIL import Image
+
+# screencapture can hang indefinitely if the window id is stale or the window
+# is in a non-capturable state — always enforce a wall-clock timeout.
+DEFAULT_CAPTURE_TIMEOUT_S = 12.0
+MIN_CAPTURE_BYTES = 1000
 
 API_DEFAULT = "http://127.0.0.1:8080/api/v1"
 TOLERANCE = 1e-3  # absolute tolerance for read-back float compare
@@ -244,30 +251,129 @@ def hamming(a, b):
     return bin(a ^ b).count("1")
 
 
-def cmd_capture(args):
-    out = args.out
-    out_dir = os.path.dirname(out)
+def _emit_both(msg: str) -> None:
+    """Loud path: many UIs surface stderr weakly — duplicate critical lines to stdout."""
+    print(msg, flush=True)
+    print(msg, file=sys.stderr, flush=True)
+
+
+def run_window_capture(
+    window_id: int,
+    out_path: str,
+    *,
+    timeout_s: float = DEFAULT_CAPTURE_TIMEOUT_S,
+    image_format: str = "png",
+) -> tuple[bool, str, dict]:
+    """
+    macOS screencapture of a single window by CGWindowID. No resize — output is the
+    window backing store pixel dimensions (same as dragging the window larger for
+    more pixels).
+
+    Returns (ok, message_for_logs, meta) where meta may include width, height, bytes.
+    """
+    meta: dict = {}
+    fmt = (image_format or "png").lower()
+    if fmt in ("jpeg", "jpg"):
+        sc_fmt = "jpg"
+    elif fmt == "png":
+        sc_fmt = "png"
+    else:
+        return False, f"unsupported image_format={image_format!r} (use png or jpg)", meta
+
+    out_dir = os.path.dirname(out_path)
     if out_dir and not os.path.isdir(out_dir):
         os.makedirs(out_dir, exist_ok=True)
-    cmd = ["screencapture", "-l", str(args.window_id), "-o", "-t", "png", "-x", out]
-    result = subprocess.run(cmd, capture_output=True)
+
+    cmd = ["screencapture", "-l", str(window_id), "-o", "-t", sc_fmt, "-x", out_path]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        return False, f"screencapture timed out after {timeout_s}s (window_id={window_id})", meta
+
+    err_txt = (result.stderr or b"").decode(errors="replace").strip()
     if result.returncode != 0:
-        print(f"[CAPTURE_FAILED] window_id={args.window_id} returncode={result.returncode} "
-              f"stderr={result.stderr.decode().strip()!r}", file=sys.stderr)
+        return False, (
+            f"screencapture returncode={result.returncode} window_id={window_id} "
+            f"stderr={err_txt!r}"
+        ), meta
+
+    if not os.path.isfile(out_path):
+        return False, (
+            f"screencapture exited 0 but no file at {out_path!r} — stale window id, "
+            f"or Screen Recording not granted to this process (Python/Terminal/Cursor)"
+        ), meta
+
+    nbytes = os.path.getsize(out_path)
+    meta["bytes"] = nbytes
+    if nbytes < MIN_CAPTURE_BYTES:
+        return False, f"captured file too small ({nbytes} bytes < {MIN_CAPTURE_BYTES})", meta
+
+    try:
+        with Image.open(out_path) as im:
+            meta["width"], meta["height"] = im.size
+    except Exception as e:
+        return False, f"saved file exists but is not a readable image: {e}", meta
+
+    return True, "ok", meta
+
+
+def cmd_capture(args):
+    ok, msg, meta = run_window_capture(
+        args.window_id,
+        args.out,
+        timeout_s=args.timeout,
+        image_format=args.format,
+    )
+    if not ok:
+        line = f"[CAPTURE_FAILED] window_id={args.window_id} {msg}"
+        _emit_both(line)
         sys.exit(5)
-    if not os.path.isfile(out):
-        print(f"[CAPTURE_FAILED] window_id={args.window_id} screencapture exited 0 but no "
-              f"file at {out}. Window id may be stale (Arena restarted?), or Screen "
-              f"Recording permission may not be granted to this process.", file=sys.stderr)
+    w, h = meta.get("width"), meta.get("height")
+    print(
+        f"[CAPTURE_OK] window_id={args.window_id} out={os.path.basename(args.out)} "
+        f"bytes={meta.get('bytes')} dims={w}x{h} format={args.format} "
+        f"(native window pixels, no downscale in this tool)",
+        flush=True,
+    )
+
+
+def cmd_probe(args):
+    """
+    One-shot health check: proves screencapture + window id + permissions in < timeout.
+    Use before any long sweep or massive_session.
+    """
+    ok, msg, meta = run_window_capture(
+        args.window_id,
+        args.out,
+        timeout_s=args.timeout,
+        image_format=args.format,
+    )
+    if not ok:
+        line = f"[PROBE_FAILED] window_id={args.window_id} {msg}"
+        _emit_both(line)
         sys.exit(5)
-    nbytes = os.path.getsize(out)
-    if nbytes < 1000:
-        print(f"[CAPTURE_SUSPECT] window_id={args.window_id} out={os.path.basename(out)} "
-              f"bytes={nbytes} — file is tiny, capture may have failed silently",
-              file=sys.stderr)
-        sys.exit(5)
-    print(f"[CAPTURE_OK] window_id={args.window_id} out={os.path.basename(out)} "
-          f"bytes={nbytes}")
+
+    w, h = meta.get("width"), meta.get("height")
+    if w < args.min_width or h < args.min_height:
+        line = (
+            f"[PROBE_FAILED] window_id={args.window_id} dims={w}x{h} "
+            f"below --min-width={args.min_width} --min-height={args.min_height} "
+            f"(wrong window — e.g. main UI thumbnail — or monitor too small?)"
+        )
+        _emit_both(line)
+        sys.exit(6)
+
+    b = meta.get("bytes", 0)
+    if b < args.min_bytes:
+        line = f"[PROBE_FAILED] window_id={args.window_id} bytes={b} < --min-bytes={args.min_bytes}"
+        _emit_both(line)
+        sys.exit(6)
+
+    print(
+        f"[PROBE_OK] window_id={args.window_id} out={args.out!r} dims={w}x{h} bytes={b} "
+        f"format={args.format} — capture path is working",
+        flush=True,
+    )
 
 
 def cmd_verify(args):
@@ -327,8 +433,38 @@ def main():
     c = sub.add_parser("capture", help="Screenshot a specific Arena window by id (macOS)")
     c.add_argument("--window-id", required=True, type=int,
                    help="CGWindowID from list_resolume_windows MCP call")
-    c.add_argument("--out", required=True, help="output png path")
+    c.add_argument("--out", required=True, help="output image path (.png or .jpg)")
+    c.add_argument(
+        "--format",
+        choices=("png", "jpg"),
+        default="png",
+        help="image format sent to screencapture -t (default png = lossless, full-size pixels)",
+    )
+    c.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_CAPTURE_TIMEOUT_S,
+        help=f"wall-clock seconds for screencapture (default {DEFAULT_CAPTURE_TIMEOUT_S})",
+    )
     c.set_defaults(func=cmd_capture)
+
+    pr = sub.add_parser(
+        "probe",
+        help="Instant capture health check (timeouts, min size, min dimensions). "
+             "Run before sweeps / TVHead sessions.",
+    )
+    pr.add_argument("--window-id", required=True, type=int)
+    pr.add_argument(
+        "--out",
+        default="/tmp/ffgl_capture_probe.png",
+        help="where to write the test frame (default /tmp/ffgl_capture_probe.png)",
+    )
+    pr.add_argument("--format", choices=("png", "jpg"), default="png")
+    pr.add_argument("--timeout", type=float, default=DEFAULT_CAPTURE_TIMEOUT_S)
+    pr.add_argument("--min-width", type=int, default=480)
+    pr.add_argument("--min-height", type=int, default=360)
+    pr.add_argument("--min-bytes", type=int, default=5000)
+    pr.set_defaults(func=cmd_probe)
 
     v = sub.add_parser("verify", help="Confirm screenshot exists and compute dhash delta")
     v.add_argument("--current", required=True, help="path to current screenshot")
