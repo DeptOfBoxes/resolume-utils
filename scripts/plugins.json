@@ -1,13 +1,15 @@
 [
-  {"bundle": "CubePortModel",         "dylib": "libcubeport_model.dylib"},
-  {"bundle": "CubePortTransform",     "dylib": "libcubeport_transform.dylib"},
-  {"bundle": "CubePortSurface",       "dylib": "libcubeport_surface.dylib"},
-  {"bundle": "CubePortStructure",     "dylib": "libcubeport_structure.dylib"},
-  {"bundle": "CubePortLighting",      "dylib": "libcubeport_lighting.dylib"},
-  {"bundle": "CubePort Publisher",    "dylib": "libffgl_cubeport_publisher.dylib"},
-  {"bundle": "CubePort Mirror",       "dylib": "libcubeport_mirror.dylib"},
-  {"bundle": "CubePort Mirror Model", "dylib": "libcubeport_mirror_model.dylib"},
-  {"bundle": "CubePortStage",         "dylib": "libcubeport_stage.dylib"},
-  {"bundle": "CubePortKinetic",       "dylib": "libcubeport_kinetic.dylib"},
-  {"bundle": "CubePort Ripple",       "dylib": "libcubeport_ripple.dylib"}
+  {"bundle": "FeedBox"},
+  {"bundle": "ModelBox"},
+  {"bundle": "ModelBox Transform"},
+  {"bundle": "ModelBox Surface"},
+  {"bundle": "ModelBox Structure"},
+  {"bundle": "ModelBox Lighting"},
+  {"bundle": "ModelBox Publisher"},
+  {"bundle": "ModelBox Mirror"},
+  {"bundle": "ModelBox Mirror Model"},
+  {"bundle": "ModelBox Ripple"},
+  {"bundle": "ModelBox Stage"},
+  {"bundle": "ModelBox Kinetic"},
+  {"bundle": "ModelBox Effects Engine"}
 ]
